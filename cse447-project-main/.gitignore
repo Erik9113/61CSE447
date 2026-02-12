@@ -1,0 +1,25 @@
+*.py[cod]
+work/
+output/
+submit/
+submit.zip
+
+# Data
+data/
+*.bz2
+*.xml
+*.txt
+
+# Models
+work/
+*.checkpoint
+*.pkl
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+
+# Mac/Linux junk
+.DS_Store
+
