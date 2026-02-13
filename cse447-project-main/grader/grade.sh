@@ -12,7 +12,7 @@ function run() {
   docker run --rm \
     -v $PWD/src:/job/src \
     -v $PWD/work:/job/work \
-    -v $DATA:/job/data \
+    -v /c/cse447/cse447-project-main/example:/job/data \
     -v $PWD/$OUT:/job/output \
     cse447-proj/demo \
     bash /job/src/predict.sh /job/data/input.txt /job/output/pred.txt

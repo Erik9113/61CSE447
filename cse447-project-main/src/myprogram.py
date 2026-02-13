@@ -20,7 +20,7 @@ class MyModel:
     def load_training_data(cls):
         # your code here
         # this particular model doesn't train
-        data_path = os.path.join("data", "wiki_clean.txt")
+        data_path = os.path.join("/job/src/wiki_clean.txt") 
         data = []
 
         if not os.path.exists(data_path):
