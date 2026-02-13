@@ -13,6 +13,7 @@ class MyModel:
     """
     def __init__(self):
         self.unigrams = Counter()
+        self.bigrams = Counter()  
         self.vocab = set()
         self.top3_chars = []
 
@@ -20,7 +21,10 @@ class MyModel:
     def load_training_data(cls):
         # your code here
         # this particular model doesn't train
-        data_path = os.path.join("/job/src/wiki_clean.txt") 
+        data_path = os.path.join("src", "wiki_clean.txt")
+        # data_path = os.path.join("example", "input.txt") 
+        # Creating a bigram mapping on example input to test program without data.
+        # Success rate: 0.6923
         data = []
 
         if not os.path.exists(data_path):
@@ -54,40 +58,53 @@ class MyModel:
 
     def run_train(self, data, work_dir):
         for line in data:
+            prev_char = None
             for c in line:
                 self.unigrams[c] += 1
                 self.vocab.add(c)
+                if prev_char is not None:
+                    self.bigrams[(prev_char, c)] += 1
+                prev_char = c
 
-        self.top3_chars = [c for c, _ in self.unigrams.most_common(3)]  
-    
-        print("Training complete.")
-        print("Vocab size:", len(self.vocab))
-        print("Top 3 characters:", self.top3_chars)
+        self.top3_chars = [c for c, _ in self.unigrams.most_common() if c != ' '][:3]
+
+        
+        # print("Training complete.")
+        # print("Vocab size:", len(self.vocab))
+        # print("Top 3 characters:", self.top3_chars)
 
 
     def run_pred(self, data):
-        # preds = []
-        # all_chars = string.ascii_letters
-        # for inp in data:
-        #     # this model just predicts a random character each time
-        #     top_guesses = [random.choice(all_chars) for _ in range(3)]
-        #     preds.append(''.join(top_guesses))
-        # return preds
         preds = []
-        guess_string = ''.join(self.top3_chars)
+        for line in data:
+            if not line:
+                preds.append(''.join(self.top3_chars))
+                continue
 
-        if len(guess_string) < 3:
-            guess_string += "   "
-            guess_string = guess_string[:3]
+            prev_char = line[-1]
+            next_chars = [c for (pc, c), _ in self.bigrams.most_common() if pc == prev_char and c != ' ']
 
-        for _ in data:
+            if next_chars:
+                guess_string = ''.join(next_chars[:3])
+            else:
+                guess_string = ''.join(self.top3_chars)
+                
+            if len(guess_string) < 3:
+                for c in self.top3_chars:
+                    if c not in guess_string and c != ' ':
+                        guess_string += c
+                    if len(guess_string) == 3:
+                        break
+
             preds.append(guess_string)
 
         return preds
 
+
     def save(self, work_dir):
         checkpoint = {
             "unigrams": dict(self.unigrams),
+            "bigrams": {f"{pc}{c}": count for (pc, c), count in self.bigrams.items()},
             "top3_chars": self.top3_chars
         }
 
@@ -103,6 +120,10 @@ class MyModel:
 
         model.unigrams = Counter(checkpoint["unigrams"])
         model.top3_chars = checkpoint["top3_chars"]
+        
+        model.bigrams = Counter()
+        for k, v in checkpoint["bigrams"].items():
+            model.bigrams[(k[0], k[1])] = v
 
         return model
 
