@@ -3,18 +3,37 @@ import os
 import string
 import random
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from collections import Counter
+import json
 
 
 class MyModel:
     """
     This is a starter model to get you started. Feel free to modify this file.
     """
+    def __init__(self):
+        self.unigrams = Counter()
+        self.vocab = set()
+        self.top3_chars = []
 
     @classmethod
     def load_training_data(cls):
         # your code here
         # this particular model doesn't train
-        return []
+        data_path = os.path.join("data", "wiki_clean.txt")
+        data = []
+
+        if not os.path.exists(data_path):
+            print("Training data not found at", data_path)
+            return []
+
+        with open(data_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if line:
+                    data.append(line)
+
+        return data
 
     @classmethod
     def load_test_data(cls, fname):
@@ -22,8 +41,9 @@ class MyModel:
         data = []
         with open(fname) as f:
             for line in f:
-                inp = line[:-1]  # the last character is a newline
-                data.append(inp)
+                # inp = line[:-1]  # the last character is a newline
+                # data.append(inp)
+                data.append(line.rstrip("\n"))
         return data
 
     @classmethod
@@ -33,33 +53,58 @@ class MyModel:
                 f.write('{}\n'.format(p))
 
     def run_train(self, data, work_dir):
-        # your code here
-        pass
+        for line in data:
+            for c in line:
+                self.unigrams[c] += 1
+                self.vocab.add(c)
+
+        self.top3_chars = [c for c, _ in self.unigrams.most_common(3)]  
+    
+        print("Training complete.")
+        print("Vocab size:", len(self.vocab))
+        print("Top 3 characters:", self.top3_chars)
+
 
     def run_pred(self, data):
-        # your code here
+        # preds = []
+        # all_chars = string.ascii_letters
+        # for inp in data:
+        #     # this model just predicts a random character each time
+        #     top_guesses = [random.choice(all_chars) for _ in range(3)]
+        #     preds.append(''.join(top_guesses))
+        # return preds
         preds = []
-        all_chars = string.ascii_letters
-        for inp in data:
-            # this model just predicts a random character each time
-            top_guesses = [random.choice(all_chars) for _ in range(3)]
-            preds.append(''.join(top_guesses))
+        guess_string = ''.join(self.top3_chars)
+
+        if len(guess_string) < 3:
+            guess_string += "   "
+            guess_string = guess_string[:3]
+
+        for _ in data:
+            preds.append(guess_string)
+
         return preds
 
     def save(self, work_dir):
-        # your code here
-        # this particular model has nothing to save, but for demonstration purposes we will save a blank file
-        with open(os.path.join(work_dir, 'model.checkpoint'), 'wt') as f:
-            f.write('dummy save')
+        checkpoint = {
+            "unigrams": dict(self.unigrams),
+            "top3_chars": self.top3_chars
+        }
+
+        with open(os.path.join(work_dir, 'model.checkpoint'), 'w', encoding="utf-8") as f:
+            json.dump(checkpoint, f)
 
     @classmethod
     def load(cls, work_dir):
-        # your code here
-        # this particular model has nothing to load, but for demonstration purposes we will load a blank file
-        with open(os.path.join(work_dir, 'model.checkpoint')) as f:
-            dummy_save = f.read()
-        return MyModel()
+        model = cls()
 
+        with open(os.path.join(work_dir, 'model.checkpoint'), encoding="utf-8") as f:
+            checkpoint = json.load(f)
+
+        model.unigrams = Counter(checkpoint["unigrams"])
+        model.top3_chars = checkpoint["top3_chars"]
+
+        return model
 
 if __name__ == '__main__':
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
