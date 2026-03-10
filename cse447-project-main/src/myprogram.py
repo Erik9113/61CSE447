@@ -25,7 +25,7 @@ class MyModel:
     def load_training_data(cls):
         # your code here
         # this particular model doesn't train
-        data_path = os.path.join("src", "wiki_clean.txt")
+        data_path = os.path.join("src", "wiki_clean2.txt")
         # data_path = os.path.join("example", "input.txt") 
         # Creating a bigram mapping on example input to test program without data.
         # Success rate: 0.6923

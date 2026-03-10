@@ -18,3 +18,9 @@ To set up the environment go through the following,
 5. Train model (offline)
 
 
+Train using
+```
+python src/myprogram.py train --work_dir work
+python src/myprogram.py test --work_dir work --test_data example/input.txt --test_output pred.txt
+python grader/grade.py pred.txt example/answer.txt --verbose
+```
