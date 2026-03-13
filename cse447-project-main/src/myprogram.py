@@ -3,7 +3,7 @@ import os
 import string
 import random
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from collections import Counter
+from collections import Counter, defaultdict
 import json
 
 
@@ -12,14 +12,15 @@ class MyModel:
     This is a starter model to get you started. Feel free to modify this file.
     """
     def __init__(self):
-        self.unigrams = Counter()
-        self.bigrams = Counter()
-        self.trigrams = Counter()  # (prev_prev_char, prev_char) -> next_char
+        self.max_n = 5
+        self.ngrams = {i: defaultdict(Counter) for i in range(1, self.max_n + 1)}
+        self.context_totals = {i: Counter() for i in range(1, self.max_n + 1)}
         self.vocab = set()
         self.top3_chars = []
         self.unk_token = '<UNK>'
         self.unk_threshold = 5  # chars appearing less than this are rare
         self.rare_chars = set()  # populated during training
+        self.lambdas = {5: 0.4, 4: 0.3, 3: 0.15, 2: 0.1, 1: 0.05}
 
     @classmethod
     def load_training_data(cls):
@@ -62,53 +63,33 @@ class MyModel:
 
     def run_train(self, data, work_dir):
         # First pass: count character frequencies and build n-grams
+        unigrams_temp = Counter()
         for line in data:
-            prev_prev_char = None
-            prev_char = None
             for c in line:
-                self.unigrams[c] += 1
-                self.vocab.add(c)
-                if prev_char is not None:
-                    self.bigrams[(prev_char, c)] += 1
-                if prev_prev_char is not None and prev_char is not None:
-                    self.trigrams[((prev_prev_char, prev_char), c)] += 1
-                prev_prev_char = prev_char
-                prev_char = c
+                unigrams_temp[c] += 1
 
         # Identify rare characters (appearing less than threshold times)
-        self.rare_chars = {c for c, count in self.unigrams.items() if count < self.unk_threshold}
+        self.rare_chars = {c for c, count in unigrams_temp.items() if count < self.unk_threshold}
         
         # Replace rare chars with UNK token in unigrams, bigrams, and trigrams
-        if self.rare_chars:
-            # Update unigrams by merging rare char counts into UNK token
-            new_unigrams = Counter()
-            for c, count in self.unigrams.items():
-                if c in self.rare_chars:
-                    new_unigrams[self.unk_token] += count
-                else:
-                    new_unigrams[c] += count
-            self.unigrams = new_unigrams
-            
-            # Update bigrams by replacing rare chars with UNK token
-            new_bigrams = Counter()
-            for (pc, c), count in self.bigrams.items():
-                new_pc = self.unk_token if pc in self.rare_chars else pc
-                new_c = self.unk_token if c in self.rare_chars else c
-                new_bigrams[(new_pc, new_c)] += count
-            self.bigrams = new_bigrams
-            
-            # Update trigrams by replacing rare chars with UNK token
-            new_trigrams = Counter()
-            for ((ppc, pc), c), count in self.trigrams.items():
-                new_ppc = self.unk_token if ppc in self.rare_chars else ppc
-                new_pc = self.unk_token if pc in self.rare_chars else pc
-                new_c = self.unk_token if c in self.rare_chars else c
-                new_trigrams[((new_ppc, new_pc), new_c)] += count
-            self.trigrams = new_trigrams
+        for line in data:
+            processed_line = [self.unk_token if c in self.rare_chars else c for c in line]
+            for i in range(len(processed_line)):
+                c = processed_line[i]
+                self.vocab.add(c)
+                
+                for n in range(1, self.max_n + 1):
+                    start_idx = i - (n - 1)
+                    if start_idx < 0:
+                        continue
+                    context = tuple(processed_line[start_idx:i])
+                    self.ngrams[n][context][c] += 1
+                    self.context_totals[n][context] += 1
 
         # Get top 3 most common characters (excluding space and UNK)
-        self.top3_chars = [c for c, _ in self.unigrams.most_common() if c != ' ' and c != self.unk_token][:3]
-
+        unigram_context = tuple()
+        self.top3_chars = [c for c, _ in self.ngrams[1][unigram_context].most_common() 
+                           if c != ' ' and c != self.unk_token][:3]
 
     def run_pred(self, data):
         preds = []
@@ -117,31 +98,44 @@ class MyModel:
                 preds.append(''.join(self.top3_chars))
                 continue
 
+            # Convert rare characters to UNK token
+            processed_line = [self.unk_token if c in self.rare_chars else c for c in line]
+            
             # Try trigrams first (need at least 2 characters)
-            next_chars = []
-            if len(line) >= 2:
-                prev_prev_char = line[-2]
-                prev_char = line[-1]
-                # Convert rare characters to UNK token
-                prev_prev_char = self.unk_token if prev_prev_char in self.rare_chars else prev_prev_char
-                prev_char = self.unk_token if prev_char in self.rare_chars else prev_char
-                
-                next_chars = [c for ((ppc, pc), c), _ in self.trigrams.most_common() 
-                             if ppc == prev_prev_char and pc == prev_char and c != ' ' and c != self.unk_token]
-            
             # Fall back to bigrams if no trigram matches
-            if not next_chars:
-                prev_char = line[-1]
-                prev_char = self.unk_token if prev_char in self.rare_chars else prev_char
-                next_chars = [c for (pc, c), _ in self.bigrams.most_common() 
-                             if pc == prev_char and c != ' ' and c != self.unk_token]
+            candidates = set()
+            for n in range(1, self.max_n + 1):
+                start_idx = len(processed_line) - (n - 1)
+                if start_idx < 0:
+                    continue
+                context = tuple(processed_line[start_idx:])
+                candidates.update(self.ngrams[n][context].keys())
             
+            candidates.discard(' ')
+            candidates.discard(self.unk_token)
+
             # Fall back to top 3 most common chars
-            if next_chars:
-                guess_string = ''.join(next_chars[:3])
-            else:
-                guess_string = ''.join(self.top3_chars)
-                
+            if not candidates:
+                preds.append(''.join(self.top3_chars))
+                continue
+
+            scores = []
+            for c in candidates:
+                score = 0
+                for n in range(1, self.max_n + 1):
+                    start_idx = len(processed_line) - (n - 1)
+                    if start_idx < 0:
+                        continue
+                    context = tuple(processed_line[start_idx:])
+                    count_c = self.ngrams[n][context][c]
+                    total = self.context_totals[n][context]
+                    prob = count_c / total if total > 0 else 0
+                    score += self.lambdas[n] * prob
+                scores.append((score, c))
+
+            scores.sort(key=lambda x: x[0], reverse=True)
+            guess_string = ''.join([char for score, char in scores[:3]])
+            
             # Pad with top3 chars if needed
             if len(guess_string) < 3:
                 for c in self.top3_chars:
@@ -156,14 +150,17 @@ class MyModel:
 
 
     def save(self, work_dir):
+        export_ngrams = {str(n): {"".join(ctx): dict(counter) for ctx, counter in self.ngrams[n].items()} for n in self.ngrams}
+        export_totals = {str(n): {"".join(ctx): total for ctx, total in self.context_totals[n].items()} for n in self.context_totals}
+        
         checkpoint = {
-            "unigrams": dict(self.unigrams),
-            "bigrams": {f"{pc}{c}": count for (pc, c), count in self.bigrams.items()},
-            "trigrams": {f"{ppc}{pc}{c}": count for ((ppc, pc), c), count in self.trigrams.items()},
+            "ngrams": export_ngrams,
+            "totals": export_totals,
             "top3_chars": self.top3_chars,
             "rare_chars": list(self.rare_chars),
             "unk_token": self.unk_token,
-            "unk_threshold": self.unk_threshold
+            "unk_threshold": self.unk_threshold,
+            "max_n": self.max_n
         }
 
         with open(os.path.join(work_dir, 'model.checkpoint'), 'w', encoding="utf-8") as f:
@@ -176,20 +173,22 @@ class MyModel:
         with open(os.path.join(work_dir, 'model.checkpoint'), encoding="utf-8") as f:
             checkpoint = json.load(f)
 
-        model.unigrams = Counter(checkpoint["unigrams"])
+        model.max_n = checkpoint.get("max_n", 5)
         model.top3_chars = checkpoint["top3_chars"]
         model.unk_token = checkpoint.get("unk_token", '<UNK>')
         model.unk_threshold = checkpoint.get("unk_threshold", 5)
         model.rare_chars = set(checkpoint.get("rare_chars", []))
         
-        model.bigrams = Counter()
-        for k, v in checkpoint["bigrams"].items():
-            model.bigrams[(k[0], k[1])] = v
-        
-        model.trigrams = Counter()
-        for k, v in checkpoint.get("trigrams", {}).items():
-            # Trigram key is 3 chars: ppc + pc + c
-            model.trigrams[((k[0], k[1]), k[2])] = v
+        # Trigram key is 3 chars: ppc + pc + c
+        for n_str, contexts in checkpoint["ngrams"].items():
+            n = int(n_str)
+            for ctx_str, counter_dict in contexts.items():
+                model.ngrams[n][tuple(ctx_str)] = Counter(counter_dict)
+                
+        for n_str, contexts in checkpoint["totals"].items():
+            n = int(n_str)
+            for ctx_str, total in contexts.items():
+                model.context_totals[n][tuple(ctx_str)] = total
 
         return model
 
