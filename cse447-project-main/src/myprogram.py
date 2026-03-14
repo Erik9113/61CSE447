@@ -86,10 +86,10 @@ class MyModel:
                     self.ngrams[n][context][c] += 1
                     self.context_totals[n][context] += 1
 
-        # Get top 3 most common characters (excluding space and UNK)
+        # Get top 3 most common characters (including space and excluding UNK)
         unigram_context = tuple()
         self.top3_chars = [c for c, _ in self.ngrams[1][unigram_context].most_common() 
-                           if c != ' ' and c != self.unk_token][:3]
+                           if c != self.unk_token][:3]
 
     def run_pred(self, data):
         preds = []
@@ -111,7 +111,6 @@ class MyModel:
                 context = tuple(processed_line[start_idx:])
                 candidates.update(self.ngrams[n][context].keys())
             
-            candidates.discard(' ')
             candidates.discard(self.unk_token)
 
             # Fall back to top 3 most common chars
@@ -139,7 +138,7 @@ class MyModel:
             # Pad with top3 chars if needed
             if len(guess_string) < 3:
                 for c in self.top3_chars:
-                    if c not in guess_string and c != ' ' and c != self.unk_token:
+                    if c not in guess_string and c != self.unk_token:
                         guess_string += c
                     if len(guess_string) == 3:
                         break
